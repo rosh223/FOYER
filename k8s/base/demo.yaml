@@ -1,0 +1,67 @@
+# Tixly, the demo ticket shop protected by the foyer-guard filter. Leave it out of a real install
+# (remove demo.yaml from kustomization.yaml).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-shop
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: demo-shop }
+  template:
+    metadata:
+      labels: { app: demo-shop, tier: app }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: demo-shop
+          image: ghcr.io/your-org/foyer-demo-shop:1.0.0
+          ports: [{ containerPort: 8304, name: http }]
+          env:
+            - { name: FOYER_URL, value: "http://queue-service:8302" }
+            - { name: WAITING_ROOM_BASE, value: "http://foyer.local/q/" }
+            - name: SHOP_ADMIN_KEY
+              valueFrom: { secretKeyRef: { name: foyer-secrets, key: SHOP_ADMIN_KEY } }
+            - name: JAVA_TOOL_OPTIONS
+              valueFrom: { configMapKeyRef: { name: foyer-config, key: JAVA_TOOL_OPTIONS } }
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: http }
+            periodSeconds: 5
+            failureThreshold: 30
+          resources:
+            requests: { cpu: 50m, memory: 256Mi }
+            limits: { memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-shop
+spec:
+  selector: { app: demo-shop }
+  ports: [{ port: 8304, targetPort: http }]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: demo-shop
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: shop.foyer.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: demo-shop, port: { number: 8304 } } }

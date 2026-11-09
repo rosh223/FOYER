@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: foyer
+resources:
+  - namespace.yaml
+  - config.yaml
+  - infra.yaml
+  - apps.yaml
+  - frontend.yaml
+  - demo.yaml
+  - network-policy.yaml
+# Point the images at your registry, e.g.  kustomize edit set image ghcr.io/your-org/foyer-queue-service=...
+images:
+  - name: ghcr.io/your-org/foyer-edge-gateway
+    newTag: 1.0.0
+  - name: ghcr.io/your-org/foyer-room-service
+    newTag: 1.0.0
+  - name: ghcr.io/your-org/foyer-queue-service
+    newTag: 1.0.0
+  - name: ghcr.io/your-org/foyer-insight-service
+    newTag: 1.0.0
+  - name: ghcr.io/your-org/foyer-demo-shop
+    newTag: 1.0.0
+  - name: ghcr.io/your-org/foyer-frontend
+    newTag: 1.0.0

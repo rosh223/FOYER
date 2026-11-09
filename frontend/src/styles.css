@@ -1,0 +1,86 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter-tight";
+@import "@fontsource-variable/jetbrains-mono";
+@import "@fontsource/fraunces/600.css";
+@import "@fontsource/fraunces/700.css";
+
+/*
+ * Foyer design tokens: a theatre foyer. Cream paper, deep plum, a brass accent, a serif display face for the big moments
+ * (your place in line, a room's name). Chart colours (plum / brass / blue / coral) were validated for colour-vision
+ * deficiency on the cream surface.
+ */
+@theme {
+  --font-sans: "Inter Tight Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces", Georgia, serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+
+  --color-cream: #faf6ef;
+  --color-paper: #fffdf9;
+  --color-ink: #1f1a24;
+  --color-ink-2: #463d4c;
+  --color-muted: #7a6f78;
+  --color-line: #ece4d8;
+  --color-line-strong: #dccfbd;
+
+  --color-plum: #4a1d3f;
+  --color-plum-2: #7b2e6b;
+  --color-plum-night: #22101d;
+  --color-plum-soft: #f5e9f1;
+  --color-brass: #b07d23;
+  --color-brass-soft: #f8edd6;
+  --color-blue: #2a6fb0;
+  --color-blue-soft: #e4eef8;
+  --color-coral: #d2553f;
+  --color-coral-soft: #fbe7e2;
+  --color-sage: #2f7d62;
+  --color-sage-soft: #e3f2ec;
+}
+
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--color-cream); color: var(--color-ink); font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+/* Component classes sit in the components layer so Tailwind utilities (bg-*, h-*, …) can override them. */
+@layer components {
+.display { font-family: var(--font-display); letter-spacing: -0.01em; }
+.tabular { font-variant-numeric: tabular-nums; }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: .45rem; height: 2.4rem; padding: 0 1rem;
+  border-radius: 999px; font-size: .9rem; font-weight: 600; border: 1px solid transparent; cursor: pointer; white-space: nowrap;
+  transition: background .15s, border-color .15s, color .15s, transform .05s; }
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn-primary { background: var(--color-plum); color: #fff; }
+.btn-primary:hover:not(:disabled) { background: var(--color-plum-2); }
+.btn-brass { background: var(--color-brass); color: #fff; }
+.btn-brass:hover:not(:disabled) { background: #96681b; }
+.btn-ghost { background: transparent; color: var(--color-ink-2); border-color: var(--color-line-strong); }
+.btn-ghost:hover:not(:disabled) { background: var(--color-paper); border-color: var(--color-ink-2); color: var(--color-ink); }
+.btn-danger { background: var(--color-coral); color: #fff; }
+.btn-sm { height: 1.9rem; padding: 0 .75rem; font-size: .8rem; }
+
+.card { background: var(--color-paper); border: 1px solid var(--color-line); border-radius: 18px; }
+.input, .select, .textarea { width: 100%; background: #fff; border: 1px solid var(--color-line-strong); border-radius: 12px;
+  padding: .55rem .8rem; font: inherit; font-size: .92rem; color: var(--color-ink); outline: none; }
+.input:focus, .select:focus, .textarea:focus { border-color: var(--color-plum-2); box-shadow: 0 0 0 3px #7b2e6b22; }
+.label { display: block; font-size: .78rem; font-weight: 600; color: var(--color-ink-2); margin-bottom: .35rem; }
+.eyebrow { font-size: .72rem; font-weight: 650; letter-spacing: .1em; text-transform: uppercase; color: var(--color-muted); }
+.table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+.table th { text-align: left; font-weight: 600; font-size: .75rem; color: var(--color-muted); padding: .6rem .9rem; border-bottom: 1px solid var(--color-line); }
+.table td { padding: .65rem .9rem; border-bottom: 1px solid var(--color-line); }
+.table tr:last-child td { border-bottom: none; }
+
+}
+
+:focus-visible { outline: 2px solid var(--color-plum-2); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+@keyframes fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.fade-up { animation: fade-up .4s ease-out both; }
+@keyframes breathe { 0%, 100% { transform: scale(1); opacity: .9; } 50% { transform: scale(1.04); opacity: 1; } }
+.breathe { animation: breathe 3.2s ease-in-out infinite; }
+@keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
+.skeleton { background: linear-gradient(90deg, #efe7da 0%, #f7f1e8 50%, #efe7da 100%); background-size: 800px 100%;
+  animation: shimmer 1.4s linear infinite; border-radius: 10px; }

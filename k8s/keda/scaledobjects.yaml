@@ -1,0 +1,50 @@
+# A flash sale is a spike you can see coming. CPU scaling reacts after the crowd arrives, and new JVMs are slow until
+# warmed up (the load test measured a much worse tail on a cold instance). So queue-service is scaled UP AHEAD of the
+# sale with a cron trigger, and CPU keeps it right afterwards. Edit the window for each big sale (or have your release
+# tooling patch it from the room's schedule).
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: queue-service
+  namespace: foyer
+spec:
+  scaleTargetRef:
+    name: queue-service
+  minReplicaCount: 3
+  maxReplicaCount: 30
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 600
+  triggers:
+    - type: cron
+      metadata:
+        timezone: Asia/Kolkata
+        start: 30 9 * * *
+        end: 30 11 * * *
+        desiredReplicas: "15"
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "60"
+---
+# insight-service is an event consumer: scale it on Kafka consumer lag. foyer.events has 12 partitions, so 12 consumers
+# is the useful maximum.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: insight-service
+  namespace: foyer
+spec:
+  scaleTargetRef:
+    name: insight-service
+  minReplicaCount: 2
+  maxReplicaCount: 12
+  triggers:
+    - type: kafka
+      metadata:
+        bootstrapServers: kafka.foyer.svc:9092
+        consumerGroup: insight-service
+        topic: foyer.events
+        lagThreshold: "2000"

@@ -1,0 +1,23 @@
+# Optional overlay for clusters with KEDA (https://keda.sh).
+#   kubectl apply -k k8s/keda
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../base
+  - scaledobjects.yaml
+patches:
+  # KEDA manages its own HPAs for these two, so remove the CPU-only ones.
+  - target: { kind: HorizontalPodAutoscaler, name: insight-service }
+    patch: |
+      $patch: delete
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      metadata:
+        name: insight-service
+  - target: { kind: HorizontalPodAutoscaler, name: queue-service }
+    patch: |
+      $patch: delete
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      metadata:
+        name: queue-service

@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: frontend }
+  template:
+    metadata:
+      labels: { app: frontend, tier: web }
+    spec:
+      containers:
+        - name: frontend
+          image: ghcr.io/your-org/foyer-frontend:1.0.0
+          ports: [{ containerPort: 80, name: http }]
+          readinessProbe:
+            httpGet: { path: /, port: http }
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+            limits: { memory: 64Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+spec:
+  selector: { app: frontend }
+  ports: [{ port: 80, targetPort: http }]
+---
+# The ingress controller is the edge: it sets X-Forwarded-For to the real client address (ingress-nginx does by default,
+# unless use-forwarded-headers is on), which the gateway and queue-service use for per-IP limits. API traffic goes straight
+# to the gateway; the frontend pods only serve the app and foyer.js.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: foyer
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 64k
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: foyer.local
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend: { service: { name: edge-gateway, port: { number: 8080 } } }
+          - path: /.well-known
+            pathType: Prefix
+            backend: { service: { name: edge-gateway, port: { number: 8080 } } }
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: frontend, port: { number: 80 } } }

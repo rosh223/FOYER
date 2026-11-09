@@ -1,0 +1,14 @@
+target/
+node_modules/
+dist/
+.env
+*.log
+.idea/
+.vscode/
+.angular/
+e2e/screenshots/
+
+# test output
+e2e/playwright-report/
+e2e/test-results/
+.angular/

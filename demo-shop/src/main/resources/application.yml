@@ -1,0 +1,36 @@
+server:
+  port: ${PORT:8304}
+
+spring:
+  application:
+    name: demo-shop
+
+shop:
+  foyer-url: ${FOYER_URL:http://localhost:8302}
+  waiting-room-base: ${WAITING_ROOM_BASE:http://localhost:3005/q/}
+  admin-key: ${SHOP_ADMIN_KEY:dev-shop-admin}
+  events:
+    - slug: echoes-mumbai
+      room-id: rm_echoes
+      origin-key: fok_demo_echoes_shop_0b7f4c2e9a1d
+      title: Echoes World Tour · Mumbai
+      subtitle: Starlight Arena, Navi Mumbai
+      date: 18 & 19 January
+      tickets: [120, 240, 360]
+    - slug: tatkal-demo
+      room-id: rm_tatkal
+      origin-key: fok_demo_tatkal_shop_5e2a8c1f7b3d
+      title: Rajdhani Express · Tatkal
+      subtitle: Mumbai CSMT → New Delhi · 3A, 2A and 1A
+      date: Tomorrow, 16:35
+      tickets: [24, 48, 72]
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true

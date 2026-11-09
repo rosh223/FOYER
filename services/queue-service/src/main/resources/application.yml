@@ -1,0 +1,51 @@
+spring:
+  application:
+    name: queue-service
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2s
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        enable.idempotence: true
+        linger.ms: 10
+        max.block.ms: 1000
+        delivery.timeout.ms: 30000
+        request.timeout.ms: 10000
+
+server:
+  port: ${PORT:8302}
+  shutdown: graceful
+
+foyer:
+  room-service-url: ${ROOM_SERVICE_URL:http://localhost:8301}
+  # Development keys only. Generate your own pair for production: see README ("Signing keys").
+  signing-private-key: ${FOYER_SIGNING_PRIVATE_KEY:MC4CAQAwBQYDK2VwBCIEIPqKVERPD332SISNf8T/oEf3YKpRXW82EMiLygs1LYB4}
+  signing-public-key: ${FOYER_SIGNING_PUBLIC_KEY:MCowBQYDK2VwAyEAe0SzCg6LmkTyEeuD5dx7FxBZ97tCp17pNtyCyJylEsQ=}
+  key-id: ${FOYER_KEY_ID:dev-2026-10}
+  ticket-secret: ${FOYER_TICKET_SECRET:dev-ticket-secret-change-me-32-bytes}
+  pow-secret: ${FOYER_POW_SECRET:dev-pow-secret-change-me-32-bytes!!}
+  sim-key: ${FOYER_SIM_KEY:dev-rehearsal-key-change-me}
+  instance-id: ${HOSTNAME:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}

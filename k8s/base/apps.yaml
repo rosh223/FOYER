@@ -1,0 +1,370 @@
+# Console and visitor API edge: JWT for the console, per-IP Redis rate limits for visitors.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: edge-gateway
+  labels: { app: edge-gateway, tier: app }
+spec:
+  replicas: 2
+  strategy:
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
+  selector:
+    matchLabels: { app: edge-gateway }
+  template:
+    metadata:
+      labels: { app: edge-gateway, tier: app }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "8080"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      terminationGracePeriodSeconds: 30
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app: edge-gateway } }
+      containers:
+        - name: edge-gateway
+          image: ghcr.io/your-org/foyer-edge-gateway:1.0.0
+          ports: [{ containerPort: 8080, name: http }]
+          envFrom:
+            - configMapRef: { name: foyer-config }
+            - secretRef: { name: foyer-secrets }
+          env:
+            - { name: PORT, value: "8080" }
+          startupProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 200m, memory: 384Mi }
+            limits: { memory: 384Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: edge-gateway
+spec:
+  selector: { app: edge-gateway }
+  ports: [{ port: 8080, targetPort: http }]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: edge-gateway
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app: edge-gateway }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: edge-gateway
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: edge-gateway }
+  minReplicas: 2
+  maxReplicas: 10
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies: [{ type: Percent, value: 100, periodSeconds: 15 }]
+    scaleDown:
+      stabilizationWindowSeconds: 300
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 60 }
+---
+# Rooms, schedules, lottery seeds, origin keys; publishes room snapshots to Kafka. Sales keep running if it's down
+# (every queue-service caches rooms), so one replica is enough. Rehearsals are held in memory by the pod that runs them.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: room-service
+  labels: { app: room-service, tier: app }
+spec:
+  replicas: 1
+  strategy:
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
+  selector:
+    matchLabels: { app: room-service }
+  template:
+    metadata:
+      labels: { app: room-service, tier: app }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "8301"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      terminationGracePeriodSeconds: 30
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app: room-service } }
+      containers:
+        - name: room-service
+          image: ghcr.io/your-org/foyer-room-service:1.0.0
+          ports: [{ containerPort: 8301, name: http }]
+          envFrom:
+            - configMapRef: { name: foyer-config }
+            - secretRef: { name: foyer-secrets }
+          env:
+            - { name: PORT, value: "8301" }
+            - { name: DB_NAME, value: "rooms" }
+          startupProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 100m, memory: 512Mi }
+            limits: { memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: room-service
+spec:
+  selector: { app: room-service }
+  ports: [{ port: 8301, targetPort: http }]
+---
+# The hot path: joins, status polls, admission ticker (one leader per room via a Redis lease), signed passes.
+# Stateless apart from Redis, so it scales out freely.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: queue-service
+  labels: { app: queue-service, tier: app }
+spec:
+  replicas: 3
+  strategy:
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
+  selector:
+    matchLabels: { app: queue-service }
+  template:
+    metadata:
+      labels: { app: queue-service, tier: app }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "8302"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      terminationGracePeriodSeconds: 30
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app: queue-service } }
+      containers:
+        - name: queue-service
+          image: ghcr.io/your-org/foyer-queue-service:1.0.0
+          ports: [{ containerPort: 8302, name: http }]
+          envFrom:
+            - configMapRef: { name: foyer-config }
+            - secretRef: { name: foyer-secrets }
+          env:
+            - { name: PORT, value: "8302" }
+          startupProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 500m, memory: 512Mi }
+            limits: { memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: queue-service
+spec:
+  selector: { app: queue-service }
+  ports: [{ port: 8302, targetPort: http }]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: queue-service
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels: { app: queue-service }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: queue-service
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: queue-service }
+  minReplicas: 3
+  maxReplicas: 30
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies: [{ type: Percent, value: 100, periodSeconds: 15 }]
+    scaleDown:
+      stabilizationWindowSeconds: 300
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 60 }
+---
+# Consumes queue events into Postgres for the console's charts and fairness reports.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: insight-service
+  labels: { app: insight-service, tier: app }
+spec:
+  replicas: 2
+  strategy:
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
+  selector:
+    matchLabels: { app: insight-service }
+  template:
+    metadata:
+      labels: { app: insight-service, tier: app }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "8303"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      terminationGracePeriodSeconds: 30
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app: insight-service } }
+      containers:
+        - name: insight-service
+          image: ghcr.io/your-org/foyer-insight-service:1.0.0
+          ports: [{ containerPort: 8303, name: http }]
+          envFrom:
+            - configMapRef: { name: foyer-config }
+            - secretRef: { name: foyer-secrets }
+          env:
+            - { name: PORT, value: "8303" }
+            - { name: DB_NAME, value: "insight" }
+          startupProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 200m, memory: 512Mi }
+            limits: { memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: insight-service
+spec:
+  selector: { app: insight-service }
+  ports: [{ port: 8303, targetPort: http }]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: insight-service
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app: insight-service }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: insight-service
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: insight-service }
+  minReplicas: 2
+  maxReplicas: 12
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies: [{ type: Percent, value: 100, periodSeconds: 15 }]
+    scaleDown:
+      stabilizationWindowSeconds: 300
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 60 }

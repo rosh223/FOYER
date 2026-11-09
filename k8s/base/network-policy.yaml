@@ -1,0 +1,68 @@
+# Services trust X-User-* identity headers set by the gateway, so each one only accepts traffic from the pods that need it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gateway-from-ingress
+spec:
+  podSelector:
+    matchLabels: { app: edge-gateway }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: ingress-nginx }
+---
+# Visitors via the gateway; the demo shop verifies passes and reports purchases; room-service runs rehearsals.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: queue-from-gateway-shop-rooms
+spec:
+  podSelector:
+    matchLabels: { app: queue-service }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - { key: app, operator: In, values: [edge-gateway, demo-shop, room-service] }
+---
+# The console via the gateway; queue-service loads room snapshots from /internal/rooms at start-up.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rooms-from-gateway-and-queue
+spec:
+  podSelector:
+    matchLabels: { app: room-service }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - { key: app, operator: In, values: [edge-gateway, queue-service] }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: insight-from-gateway-only
+spec:
+  podSelector:
+    matchLabels: { app: insight-service }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app: edge-gateway } }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: data-tier-from-apps-only
+spec:
+  podSelector:
+    matchLabels: { tier: data }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { tier: app } }
+        - podSelector: { matchLabels: { tier: data } }

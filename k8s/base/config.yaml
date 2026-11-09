@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: foyer-config
+data:
+  REDIS_HOST: redis
+  KAFKA_BOOTSTRAP: kafka:9092
+  DB_HOST: postgres
+  ROOM_SERVICE_URL: http://room-service:8301
+  QUEUE_URL: http://queue-service:8302
+  INSIGHT_URL: http://insight-service:8303
+  # Where the seeded demo rooms send admitted visitors (the Tixly demo shop, demo.yaml).
+  SHOP_URL: http://shop.foyer.local
+  JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError"
+---
+# Demo values only: use a secret manager (External Secrets, Sealed Secrets, a cloud CSI driver) in a real cluster.
+# Generate a signing key pair with:  openssl genpkey -algorithm ed25519 -outform DER | base64   (and -pubout for the public key)
+# Every queue-service replica must share the signing, ticket and proof-of-work secrets.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: foyer-secrets
+type: Opaque
+stringData:
+  JWT_SECRET: change-me-in-production-this-is-a-32+-byte-dev-secret
+  DB_USER: foyer
+  DB_PASSWORD: foyer
+  FOYER_SIGNING_PRIVATE_KEY: MC4CAQAwBQYDK2VwBCIEIPqKVERPD332SISNf8T/oEf3YKpRXW82EMiLygs1LYB4
+  FOYER_SIGNING_PUBLIC_KEY: MCowBQYDK2VwAyEAe0SzCg6LmkTyEeuD5dx7FxBZ97tCp17pNtyCyJylEsQ=
+  FOYER_TICKET_SECRET: dev-ticket-secret-change-me-32-bytes
+  FOYER_POW_SECRET: dev-pow-secret-change-me-32-bytes!!
+  FOYER_SIM_KEY: dev-rehearsal-key-change-me
+  SHOP_ADMIN_KEY: dev-shop-admin

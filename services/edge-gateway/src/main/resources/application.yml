@@ -1,0 +1,76 @@
+spring:
+  application:
+    name: edge-gateway
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: console-auth
+              uri: ${ROOM_SERVICE_URL:http://localhost:8301}
+              predicates:
+                - Path=/api/console/auth/**
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    key-resolver: "#{@userKeyResolver}"
+                    redis-rate-limiter.replenishRate: 1
+                    redis-rate-limiter.burstCapacity: 10
+            - id: console-rooms
+              uri: ${ROOM_SERVICE_URL:http://localhost:8301}
+              predicates:
+                - Path=/api/console/rooms/**,/api/console/rooms
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    key-resolver: "#{@userKeyResolver}"
+                    redis-rate-limiter.replenishRate: 20
+                    redis-rate-limiter.burstCapacity: 60
+            - id: console-insight
+              uri: ${INSIGHT_URL:http://localhost:8303}
+              predicates:
+                - Path=/api/console/insight/**
+            - id: console-live
+              uri: ${QUEUE_URL:http://localhost:8302}
+              predicates:
+                - Path=/api/console/live/**
+            - id: public-rooms
+              uri: ${ROOM_SERVICE_URL:http://localhost:8301}
+              predicates:
+                - Path=/api/public/**
+            # Visitors. The status poll is the hottest route: one Redis round trip in queue-service, and the client
+            # follows the poll interval the server suggests. Per-address limits stop single-machine floods.
+            - id: queue
+              uri: ${QUEUE_URL:http://localhost:8302}
+              predicates:
+                - Path=/api/q/**
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    key-resolver: "#{@userKeyResolver}"
+                    redis-rate-limiter.replenishRate: 50
+                    redis-rate-limiter.burstCapacity: 100
+            - id: origins
+              uri: ${QUEUE_URL:http://localhost:8302}
+              predicates:
+                - Path=/api/origin/**,/api/passes/**,/.well-known/**
+
+server:
+  port: ${PORT:8080}
+
+foyer:
+  jwt-secret: ${JWT_SECRET:change-me-in-production-this-is-a-32+-byte-dev-secret}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,gateway
+  endpoint:
+    health:
+      probes:
+        enabled: true
